@@ -1,0 +1,11 @@
+feedparser
+httpx
+groq
+pydantic
+pydantic-settings
+apscheduler
+SQLAlchemy
+asyncpg
+aiosqlite
+greenlet
+python-dotenv

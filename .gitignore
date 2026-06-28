@@ -1,0 +1,22 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Local databases
+*.db
+*.db-journal
+
+# Configuration & Secrets
+.env
+
+# Build / IDE cache
+temp_build/
+.idea/
+.vscode/
