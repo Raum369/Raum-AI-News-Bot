@@ -33,7 +33,7 @@ Follow these strict rules for styling and structure:
 2. Завжди давай ширший контекст:
 - Що передувало цій події? Чому вона відбулася саме зараз?
 - Які інші гравці ринку причетні або зачеплені?
-- Якщо є паралельна подія (наприклад, Anthropic теж потрапила под обмеження) — згадай її
+- Якщо є паралельна подія (наприклад, Anthropic теж потрапила під обмеження) — згадай її
 
 3. Не обрізай причинно-наслідковий ланцюг:
 - Чому компанія прийняла саме таке рішення?
@@ -49,20 +49,22 @@ Follow these strict rules for styling and structure:
 - Що зміниться для кінцевого користувача / ринку / конкурентів?
 - Чи є загроза ширшому тренду (наприклад, державне регулювання AI)?
 
+6. Збагачення контенту:
+- Якщо вхідний Summary дуже короткий, обов'язково використовуй свої загальні знання про штучний інтелект, щоб додати точні та цікаві технічні деталі, контекст (наприклад, конкурентів, передісторію) та логічні наслідки. Не вигадуй неправдивих фактів чи цифр, але зроби пост інформативним, глибоким та цікавим для читача.
+
 ---
 
 ### ЧОГО УНИКАТИ:
 - ❌ Загальні фрази без конкретики ("компанія зробила кроки вперед")
 - ❌ Повтор заголовку в тілі тексту
 - ❌ Опускати важливих учасників події (уряд, конкуренти, партнери)
-- ❌ Писати "навіщо це потрібно" як абстракцію — тільки конкретні причини з тексту
+- ❌ Писати "навіщо це потрібно" як абстракцію — тільки конкретні причини з тексту або логічні технічні причини
 - ❌ Видавати позицію однієї сторони за факт без позначки ("компанія стверджує, що...")
 
 ---
 
 ### ФОРМАТ ДОВЖИНИ:
-- Загальна сумарна довжина всього тексту (заголовок + всі три абзаци разом) ОБОВ'ЯЗКОВО має бути менше 550 символів, щоб гарантовано вміститися в ліміт підпису до фото в Telegram.
-- Речення мають бути максимально короткими та простими (до 10-12 слів). Уникай довгих підрядних речень та складних зворотів. Пиши лаконічно і ємно.
+- Загальна сумарна довжина всього тексту (без урахування HTML тегів) має бути в межах 650–900 символів (приблизно 110–140 слів). Пиши інформативно, деталізовано та професійно.
 
 ---
 
@@ -74,11 +76,11 @@ You must output a JSON object containing the following keys (ensure all Ukrainia
   - 4-6: Standard AI updates, interesting research, funding rounds
   - 1-3: Minor/niche updates, routine corporate news, generic articles
 - "emoji_prefix": a single relevant emoji to introduce this news (e.g., 🤖, 🔌, ⚖️).
-- "translated_title": a catchy, short, and punchy title in Ukrainian (plain text, no HTML tags, normal capitalization, strictly up to 8 words).
-- "main_paragraph": a paragraph in Ukrainian representing the main news body (WHAT happened + WHO did it + WHEN/WHERE, strictly 2-3 sentences, strictly up to 25 words).
+- "translated_title": a catchy, short, and punchy title in Ukrainian (plain text, no HTML tags, normal capitalization, strictly up to 15 words).
+- "main_paragraph": a paragraph in Ukrainian representing the main news body (WHAT happened + WHO did it + WHEN/WHERE, strictly 2-4 sentences, 40 to 70 words).
   - It MUST naturally embed the article's source link. To do this, wrap a contextually relevant verb or key noun (e.g., "представила", "презентувала", "дослідження", "опублікувала") in <a href="{link}">...</a>.
-- "context_paragraph": a paragraph in Ukrainian ("Контекст") giving wider background, preceding events, or official quotes (strictly 1-2 sentences, strictly up to 20 words). Output ONLY the paragraph text (do not prepend "Контекст." or similar headers).
-- "what_next_paragraph": a paragraph in Ukrainian ("Що далі") detailing the consequences, who wins/loses, and future steps (strictly 1-2 sentences, strictly up to 20 words). Output ONLY the paragraph text (do not prepend "Що далі." or similar headers).
+- "context_paragraph": a paragraph in Ukrainian giving wider background, preceding events, or official quotes (strictly 2-3 sentences, 30 to 55 words). Output ONLY the paragraph text (do not prepend "Контекст." or similar headers).
+- "what_next_paragraph": a paragraph in Ukrainian detailing the consequences, who wins/loses, and future steps (strictly 2-3 sentences, 30 to 55 words). Output ONLY the paragraph text (do not prepend "Що далі." or similar headers).
 
 Input format:
 Source: <source>
@@ -161,29 +163,76 @@ def format_telegram_post(source: str, link: str, processed_data: dict) -> str:
         # Force any <a> tag in main_p to point to the correct link
         main_p = re.sub(r'<a(?:\s+[^>]*)?>', f'<a href="{escaped_link}">', main_p)
         
-    # Assemble header
-    post_text = f"{emoji_prefix} <b>{html.escape(title, quote=False)}</b>\n\n"
+    # Helper to assemble body text
+    def assemble_body(m_p, ctx, w_n) -> str:
+        paragraphs = []
+        if m_p:
+            paragraphs.append(m_p)
+        if ctx:
+            if not ctx.lower().startswith("контекст"):
+                paragraphs.append(f"<b>Контекст.</b> {ctx}")
+            else:
+                paragraphs.append(ctx)
+        if w_n:
+            if not w_n.lower().startswith("що далі"):
+                paragraphs.append(f"<b>Що далі.</b> {w_n}")
+            else:
+                paragraphs.append(w_n)
+        return "\n\n".join(paragraphs)
+
+    body_text = assemble_body(main_p, context, what_next)
     
-    # Assemble body paragraphs
-    paragraphs = []
-    if main_p:
-        paragraphs.append(main_p)
-    if context:
-        # Check if context starts with "Контекст" to avoid double labelling
-        if not context.lower().startswith("контекст"):
-            paragraphs.append(f"<b>Контекст.</b> {context}")
-        else:
-            paragraphs.append(context)
-    if what_next:
-        if not what_next.lower().startswith("що далі"):
-            paragraphs.append(f"<b>Що далі.</b> {what_next}")
-        else:
-            paragraphs.append(what_next)
+    # Define footer template
+    footer = f'\n\n<a href="{escaped_link}">Джерело</a> | @raumainews'
+    
+    # Helper to calculate clean rendered character count
+    def get_rendered_len(b_t: str) -> int:
+        test_post = f"{emoji_prefix} {title}\n\n{b_t}\n\nДжерело | @raumainews"
+        test_post_stripped = re.sub(r'<[^>]+>', '', test_post)
+        return len(test_post_stripped)
+
+    # Programmatic safety check: keep it strictly under 1000 characters (Telegram limit is 1024)
+    if get_rendered_len(body_text) > 1000:
+        logger.info(f"Generated post length ({get_rendered_len(body_text)} chars) exceeds safety limit. Truncating...")
+        
+        # 1. Try to trim 'what_next' sentence by sentence
+        if what_next:
+            what_next_sentences = re.split(r'(?<=[.!?])\s+', what_next)
+            while len(what_next_sentences) > 1 and get_rendered_len(body_text) > 1000:
+                what_next_sentences.pop()
+                what_next = " ".join(what_next_sentences).strip()
+                body_text = assemble_body(main_p, context, what_next)
+                
+            # If even 1 sentence is too long, drop what_next entirely
+            if get_rendered_len(body_text) > 1000:
+                what_next = ""
+                body_text = assemble_body(main_p, context, what_next)
+
+        # 2. Try to trim 'context' sentence by sentence
+        if context and get_rendered_len(body_text) > 1000:
+            context_sentences = re.split(r'(?<=[.!?])\s+', context)
+            while len(context_sentences) > 1 and get_rendered_len(body_text) > 1000:
+                context_sentences.pop()
+                context = " ".join(context_sentences).strip()
+                body_text = assemble_body(main_p, context, what_next)
+                
+            # If even 1 sentence is too long, drop context entirely
+            if get_rendered_len(body_text) > 1000:
+                context = ""
+                body_text = assemble_body(main_p, context, what_next)
+
+        # 3. Last resort: if still too long, strip tags from main_p and cut character count hard
+        if get_rendered_len(body_text) > 1000:
+            logger.warning("Post is still too long after dropping context/what_next. Hard-truncating main paragraph.")
+            main_p = re.sub(r'<[^>]+>', '', main_p)  # Strip HTML tags from main_p to make character cutting safe
             
-    post_text += "\n\n".join(paragraphs)
-    post_text += "\n\n"
-    
-    # Add source link and channel sign-off
-    post_text += f'<a href="{escaped_link}">Джерело</a> | @raumainews'
-    
+            # Find maximum main_p length to satisfy 1000 limit
+            # Limit = 1000 - len(emoji_prefix) - len(title) - len("Джерело | @raumainews") - formatting chars (~15)
+            max_main_len = 1000 - len(emoji_prefix) - len(title) - 25
+            if len(main_p) > max_main_len:
+                main_p = main_p[:max_main_len - 3].strip() + "..."
+            
+            body_text = assemble_body(main_p, "", "")
+
+    post_text = f"{emoji_prefix} <b>{html.escape(title, quote=False)}</b>\n\n{body_text}{footer}"
     return post_text.strip()
