@@ -4,9 +4,11 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import DeclarativeBase
 from app.config import settings
 
-# Rewrite postgresql:// to postgresql+asyncpg:// for SQLAlchemy async driver
+# Rewrite postgres:// or postgresql:// to postgresql+asyncpg:// for SQLAlchemy async driver
 db_url = settings.DATABASE_URL
-if db_url.startswith("postgresql://"):
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+elif db_url.startswith("postgresql://"):
     db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
 engine = create_async_engine(db_url, echo=False)
@@ -29,9 +31,13 @@ async def init_db():
         await conn.run_sync(Base.metadata.create_all)
 
 async def is_article_published(url: str) -> bool:
+    normalized_url = url[:-1] if url.endswith("/") else url
     async with AsyncSessionLocal() as session:
         result = await session.execute(
-            select(PublishedArticle).where(PublishedArticle.url == url)
+            select(PublishedArticle).where(
+                (PublishedArticle.url == normalized_url) |
+                (PublishedArticle.url == normalized_url + "/")
+            )
         )
         return result.scalar_one_or_none() is not None
 

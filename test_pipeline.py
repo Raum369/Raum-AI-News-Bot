@@ -22,12 +22,20 @@ async def run_test():
     # Save the original fetch function
     original_fetch = app.parser.fetch_all_new_articles
     
-    # Define a wrapper that limits output to 2 articles to save Groq API rate limits
+    # Define a wrapper that filters out published articles and limits to 1 new article
     async def limited_fetch():
+        from app.db import is_article_published
         articles = await original_fetch()
         print(f"Total articles found in feeds: {len(articles)}.")
-        print("Limiting to top 2 articles for this test run to prevent rate-limiting.")
-        return articles[:2]
+        
+        unpublished = []
+        for art in articles:
+            if not await is_article_published(art["link"]):
+                unpublished.append(art)
+                
+        print(f"Total unpublished articles: {len(unpublished)}.")
+        print("Limiting to the first 1 unpublished article for this test run to prevent rate-limiting.")
+        return unpublished[:1]
     
     # Patch the parser with the limited one
     with patch("app.main.fetch_all_new_articles", limited_fetch):

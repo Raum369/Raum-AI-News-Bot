@@ -4,6 +4,7 @@ import logging
 import asyncio
 from datetime import datetime, timezone, timedelta
 import re
+import urllib.parse
 
 logger = logging.getLogger(__name__)
 
@@ -19,12 +20,50 @@ RSS_SOURCES = {
 # Premium fallback images per source (Unsplash, public domain)
 # Used when RSS feed does not contain an embedded image
 SOURCE_FALLBACK_IMAGES = {
-    "OpenAI": "https://images.unsplash.com/photo-1677442136019-21780ecad995?w=1200&q=80",
-    "Anthropic": "https://images.unsplash.com/photo-1620712943543-bcc4688e7485?w=1200&q=80",
-    "TechCrunch": "https://images.unsplash.com/photo-1518770660439-4636190af475?w=1200&q=80",
-    "The Verge": "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=1200&q=80",
-    "VentureBeat": "https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=1200&q=80",
+    "OpenAI": [
+        "https://images.unsplash.com/photo-1677442136019-21780ecad995?auto=format&fit=crop&w=1200&q=80",
+        "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80",
+        "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=1200&q=80",
+        "https://images.unsplash.com/photo-1507668077129-56e32842fceb?auto=format&fit=crop&w=1200&q=80"
+    ],
+    "Anthropic": [
+        "https://images.unsplash.com/photo-1620712943543-bcc4688e7485?auto=format&fit=crop&w=1200&q=80",
+        "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?auto=format&fit=crop&w=1200&q=80",
+        "https://images.unsplash.com/photo-1639762681485-074b7f938ba0?auto=format&fit=crop&w=1200&q=80",
+        "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&w=1200&q=80"
+    ],
+    "TechCrunch": [
+        "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=80",
+        "https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1200&q=80",
+        "https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&w=1200&q=80",
+        "https://images.unsplash.com/photo-1531297484001-80022131f5a1?auto=format&fit=crop&w=1200&q=80"
+    ],
+    "The Verge": [
+        "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&w=1200&q=80",
+        "https://images.unsplash.com/photo-1563986768609-322da13575f3?auto=format&fit=crop&w=1200&q=80",
+        "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=1200&q=80",
+        "https://images.unsplash.com/photo-1485827404703-89b55fcc595e?auto=format&fit=crop&w=1200&q=80"
+    ],
+    "VentureBeat": [
+        "https://images.unsplash.com/photo-1635070041078-e363dbe005cb?auto=format&fit=crop&w=1200&q=80",
+        "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=1200&q=80",
+        "https://images.unsplash.com/photo-1605810230434-7631ac76ec81?auto=format&fit=crop&w=1200&q=80",
+        "https://images.unsplash.com/photo-1677442136019-21780ecad995?auto=format&fit=crop&w=1200&q=80"
+    ],
 }
+
+import hashlib
+
+def get_source_fallback_image(source_name: str, article_link: str) -> str:
+    images = SOURCE_FALLBACK_IMAGES.get(source_name)
+    if not images:
+        images = ["https://images.unsplash.com/photo-1677442136019-21780ecad995?w=1200&q=80"]
+    
+    # Generate stable index from URL
+    hash_val = int(hashlib.md5(article_link.encode('utf-8')).hexdigest(), 16)
+    idx = hash_val % len(images)
+    return images[idx]
+
 
 # Keywords to filter general feeds (like The Verge) to only include AI articles
 AI_KEYWORDS = ["ai", "robot", "llama", "gpt", "openai", "anthropic", "gemini", "copilot", "midjourney", "claude", "artificial intelligence", "machine learning", "neural network", "llm"]
@@ -78,6 +117,44 @@ def extract_image_url(entry) -> str | None:
 
     return None
 
+async def scrape_og_image(url: str) -> str | None:
+    """
+    Scrapes the target URL to extract the Open Graph or Twitter Card image URL.
+    """
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    try:
+        logger.info(f"Scraping OG image for URL: {url}")
+        async with httpx.AsyncClient(headers=headers, timeout=5.0, follow_redirects=True) as client:
+            response = await client.get(url)
+            if response.status_code != 200:
+                logger.warning(f"Failed to scrape webpage, status code: {response.status_code}")
+                return None
+            
+            html_content = response.text
+            
+            # Match og:image with property before content
+            match = re.search(r'<meta\s+[^>]*property=["\']og:image["\']\s+[^>]*content=["\']([^"\']+)["\']', html_content, re.IGNORECASE)
+            if not match:
+                # Match og:image with content before property
+                match = re.search(r'<meta\s+[^>]*content=["\']([^"\']+)["\']\s+[^>]*property=["\']og:image["\']', html_content, re.IGNORECASE)
+            if not match:
+                # Match twitter:image with name before content
+                match = re.search(r'<meta\s+[^>]*name=["\']twitter:image["\']\s+[^>]*content=["\']([^"\']+)["\']', html_content, re.IGNORECASE)
+            if not match:
+                # Match twitter:image with content before name
+                match = re.search(r'<meta\s+[^>]*content=["\']([^"\']+)["\']\s+[^>]*name=["\']twitter:image["\']', html_content, re.IGNORECASE)
+                
+            if match:
+                img_url = match.group(1).strip()
+                resolved_url = urllib.parse.urljoin(url, img_url)
+                logger.info(f"Successfully scraped OG image: {resolved_url}")
+                return resolved_url
+    except Exception as e:
+        logger.warning(f"Failed to scrape OG image from {url}: {e}")
+    return None
+
 async def fetch_source_articles(source_name: str, feed_url: str):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -95,7 +172,9 @@ async def fetch_source_articles(source_name: str, feed_url: str):
             for entry in feed.entries[:15]:  # Slightly larger pool to filter from
                 title = entry.get("title", "").strip()
                 summary = entry.get("summary", "").strip() or entry.get("description", "").strip()
-                link = entry.get("link", "")
+                link = entry.get("link", "").strip()
+                if "openai.com" in link and not link.endswith("/"):
+                    link += "/"
                 
                 # Filter for The Verge to ensure only AI articles are processed
                 if source_name == "The Verge":
@@ -114,17 +193,13 @@ async def fetch_source_articles(source_name: str, feed_url: str):
                     except Exception as date_err:
                         logger.warning(f"Failed to parse date for {title}: {date_err}")
 
-                # Clean up/normalize trailing slashes
-                if link and link.endswith("/"):
-                    link = link[:-1]
-
                 articles.append({
                     "source": source_name,
                     "title": title,
-                    "link": link.strip(),
+                    "link": link,
                     "summary": summary,
                     "published_at": entry.get("published", "") or entry.get("pubDate", ""),
-                    "image_url": extract_image_url(entry) or SOURCE_FALLBACK_IMAGES.get(source_name)
+                    "image_url": extract_image_url(entry) or get_source_fallback_image(source_name, link)
                 })
             return articles[:10]
         except Exception as e:

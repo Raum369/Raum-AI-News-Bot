@@ -19,56 +19,56 @@ async def send_to_channel(text: str, image_url: str | None = None) -> bool:
         print("=" * 60)
         return True
 
-    # Check if we should try sending a photo
     use_photo = bool(image_url and len(text) <= 1024)
     
-    if use_photo:
-        url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendPhoto"
-        payload = {
-            "chat_id": settings.TELEGRAM_CHANNEL_ID,
-            "photo": image_url,
-            "caption": text,
-            "parse_mode": "HTML"
-        }
-    else:
-        url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage"
-        payload = {
-            "chat_id": settings.TELEGRAM_CHANNEL_ID,
-            "text": text,
-            "parse_mode": "HTML",
-            "disable_web_page_preview": True
-        }
-
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
+            if use_photo:
+                logger.info(f"Downloading image from {image_url}...")
+                try:
+                    img_resp = await client.get(image_url)
+                    if img_resp.status_code == 200:
+                        image_bytes = img_resp.content
+                        files = {"photo": ("image.jpg", image_bytes, "image/jpeg")}
+                        data = {
+                            "chat_id": settings.TELEGRAM_CHANNEL_ID,
+                            "caption": text,
+                            "parse_mode": "HTML"
+                        }
+                        url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendPhoto"
+                        logger.info("Uploading photo to Telegram...")
+                        response = await client.post(url, data=data, files=files)
+                        res_json = response.json()
+                        if response.status_code == 200 and res_json.get("ok"):
+                            logger.info("Successfully posted to Telegram with uploaded photo.")
+                            return True
+                        else:
+                            description = res_json.get('description', 'Unknown error')
+                            logger.error(f"Telegram photo upload failed: {description}")
+                    else:
+                        logger.error(f"Failed to download image: HTTP {img_resp.status_code}")
+                except Exception as img_err:
+                    logger.error(f"Error downloading/sending photo: {img_err}")
+                
+                # If we get here, photo sending failed; fall back to text message
+                logger.info("Attempting fallback to text-only message...")
+
+            # Send text-only message
+            url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage"
+            payload = {
+                "chat_id": settings.TELEGRAM_CHANNEL_ID,
+                "text": text,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True
+            }
             response = await client.post(url, json=payload)
-            data = response.json()
-            
-            if response.status_code == 200 and data.get("ok"):
-                logger.info(f"Successfully posted to Telegram (photo={use_photo}).")
+            res_json = response.json()
+            if response.status_code == 200 and res_json.get("ok"):
+                logger.info("Successfully posted text-only message to Telegram.")
                 return True
             else:
-                description = data.get('description', 'Unknown error')
-                logger.error(f"Telegram API returned an error (photo={use_photo}): {description}")
-                
-                # Fallback to text message if photo sending failed
-                if use_photo:
-                    logger.info("Attempting fallback to text-only message...")
-                    fallback_url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage"
-                    fallback_payload = {
-                        "chat_id": settings.TELEGRAM_CHANNEL_ID,
-                        "text": text,
-                        "parse_mode": "HTML",
-                        "disable_web_page_preview": True
-                    }
-                    fallback_resp = await client.post(fallback_url, json=fallback_payload)
-                    fallback_data = fallback_resp.json()
-                    if fallback_resp.status_code == 200 and fallback_data.get("ok"):
-                        logger.info("Fallback text-only message posted successfully.")
-                        return True
-                    else:
-                        logger.error(f"Fallback text-only message also failed: {fallback_data.get('description')}")
-                
+                description = res_json.get('description', 'Unknown error')
+                logger.error(f"Telegram sendMessage failed: {description}")
                 return False
     except Exception as e:
         logger.error(f"Failed to send Telegram message: {e}")

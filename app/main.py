@@ -8,7 +8,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.config import settings
 from app.db import init_db, is_article_published, mark_article_published
-from app.parser import fetch_all_new_articles
+from app.parser import fetch_all_new_articles, scrape_og_image
 from app.processor import process_article, format_telegram_post
 from app.telegram_client import send_to_channel
 
@@ -85,10 +85,18 @@ async def check_and_publish_news():
                 processed_data=processed_data
             )
             
+            image_url = article.get("image_url")
+            scraped_img = await scrape_og_image(article["link"])
+            if scraped_img:
+                logger.info(f"Using scraped OG image: {scraped_img}")
+                image_url = scraped_img
+            else:
+                logger.info(f"Could not scrape OG image, falling back to feed/preset image: {image_url}")
+            
             logger.info(f"Posting article to Telegram: {article['title']} (Importance: {processed_data.get('importance_score')})")
             success = await send_to_channel(
                 text=post_text,
-                image_url=article.get("image_url")
+                image_url=image_url
             )
             
             if success:
@@ -126,6 +134,14 @@ async def main():
     logger.info("Initializing Raum AI News Bot database...")
     await init_db()
     logger.info("Database initialized.")
+
+    # Support running a single check cycle (useful for cron jobs like GitHub Actions)
+    import os
+    if os.environ.get("RUN_ONCE", "false").lower() == "true" or "--once" in sys.argv:
+        logger.info("Running a single check cycle as requested...")
+        await check_and_publish_news()
+        logger.info("Single check cycle complete. Exiting.")
+        return
 
     # Setup the scheduler
     scheduler = AsyncIOScheduler()

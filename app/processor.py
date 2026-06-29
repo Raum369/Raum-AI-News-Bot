@@ -1,43 +1,45 @@
 import json
 import html
 import logging
+import re
 from groq import AsyncGroq
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """
-You are a premium AI news editor for a high-end Telegram channel. Your goal is to analyze, translate, score, and format AI news in an Apple-style, minimalist, and visually engaging manner.
-You must output a JSON object containing the following keys (ensure all Ukrainian translations are natural and professional):
+You are a premium AI news editor for a high-end Telegram channel. Your goal is to analyze, score, and rewrite the provided news article as a natural, engaging tech blog post in Ukrainian, strictly in the style of the "Droider" tech channel.
+
+The style must feel like it was written by a human tech expert (witty, expert, highly professional, direct, engaging). Avoid corporate fluff, robotic transitions, and generic introductory statements.
+
+To ensure the post fits within Telegram's photo caption limits, the combined length of the translated_title and all paragraphs must be UNDER 850 characters. Keep the text concise, punchy, and dense with information.
+
+You must output a JSON object containing the following keys (ensure all Ukrainian translations are natural, professional, and grammatically correct):
 
 - "importance_score": integer from 1 to 10. Rate how interesting and critical this news is for a general AI enthusiast.
   - 10: Historic/groundbreaking (e.g. GPT-5 release, OpenAI CEO fired)
   - 7-9: Major announcements, model releases, significant breakthroughs
   - 4-6: Standard AI updates, interesting research, funding rounds
   - 1-3: Minor/niche updates, routine corporate news, generic articles
-- "emoji_prefix": string (a single relevant emoji to introduce this category/news, e.g. 🔥 for hot/breaking news, 🤖 for models, 🔬 for research, 🏢 for company/business, ⚖️ for regulations, 📦 for product updates).
-- "translated_title": string (catchy, short title in Ukrainian, translated professionally. Do not keep it in English unless it is a proper name/code. Use normal capitalization, NOT ALL CAPS).
-- "accent_summary": string (a very short summary hook, e.g. "Polymarket — 83% на запуск 28 червня" or "Збільшення швидкості на 40%").
-- "overview": string (1-2 sentences in Ukrainian providing the context or introduction of the news).
-- "key_points_title": string or null (optional title for key details/features, e.g., "Очікуваний функціонал", "Ключові деталі").
-- "key_points": array of strings (optional list of key details or features, without bullet characters like "→" or "-").
-- "warning_title": string or null (optional title for a warning, error, bug, or note, e.g., "Goblin Incident" or "Критика").
-- "warning_text": string or null (optional context for the warning/note, in Ukrainian).
-- "benchmarks_title": string or null (optional title for benchmarks, rankings, or metrics, e.g., "SWE-Bench Pro").
-- "benchmarks": array of strings (optional ranking or comparison lines, without numbering/bullet emojis like "🥇").
-- "conclusion": string (1 sentence forward-looking conclusion or impact analysis in Ukrainian).
+- "emoji_prefix": a single relevant emoji to introduce this news (e.g., 🔌 for hardware, 🤖 for models/agents, 🔬 for research, 🏢 for company news, ⚖️ for regulations).
+- "translated_title": a catchy, short, and punchy title in Ukrainian (plain text, no HTML tags, normal capitalization).
+- "lead_paragraph": a short paragraph (1-2 sentences) in Ukrainian representing the news lead.
+  - It MUST naturally embed the article's source link. To do this, wrap a contextually relevant verb or key noun (e.g., "представила", "презентувала", "дослідження", "новий звіт", "опублікувала") in <a href="{link}">...</a>.
+- "details_paragraph": a paragraph in Ukrainian highlighting key figures, details, or comparisons (e.g., performance increases, benchmarks, physical sizes).
+- "why_needed_paragraph": a paragraph in Ukrainian explaining why this is needed, the technical background, the problem it solves, or the physical limits/constraints it bypasses. Output ONLY the explanation text. Do NOT include headers like "Навіщо це потрібно" or "Зачем это нужно".
+- "beneficiaries_paragraph": a paragraph in Ukrainian explaining who will benefit from this development, who are the main beneficiaries/sectors. Output ONLY the explanation text. Do NOT include headers like "Головні бенефіціари" or "Главные бенефициары".
 
 Input format:
 Source: <source>
 Title: <title>
 Summary: <summary>
 
-Your response must be a valid JSON object ONLY. Do not wrap it in markdown codeblocks (no ```json).
+Your response must be a valid JSON object ONLY. Do not wrap it in markdown codeblocks.
 """
 
 async def process_article(source: str, original_title: str, original_summary: str) -> dict:
     """
-    Sends article data to Groq to translate, categorize, score, and structure.
+    Sends article data to Groq to translate, score, and structure as natural paragraphs.
     """
     if not settings.GROQ_API_KEY:
         logger.warning("GROQ_API_KEY is not set. Using fallback mock processor.")
@@ -72,100 +74,63 @@ def get_mock_processed_article(source: str, title: str, summary: str) -> dict:
             "importance_score": 9,
             "emoji_prefix": "🤖",
             "translated_title": "ШІ-агенти змінюють корпоративну роботу",
-            "accent_summary": "Дослідження Anthropic про автономні команди",
-            "overview": "Новий звіт демонструє, як агенти на базі Claude 3.5 Sonnet автоматизують до 80% рутинних завдань у розробці та підтримці клієнтів.",
-            "key_points_title": "Головні висновки",
-            "key_points": [
-                "Зниження операційних витрат на 45%",
-                "Створення автономних циклів тестування коду",
-                "Цілодобова підтримка без участі людей"
-            ],
-            "warning_title": "Безпека даних",
-            "warning_text": "Компаніям рекомендують обмежувати доступ агентів до конфіденційних баз даних.",
-            "benchmarks_title": "Ефективність виконання завдань",
-            "benchmarks": [
-                "Claude 3.5 Sonnet — 88% успішних запусків",
-                "GPT-4o — 79% успішних запусків",
-                "Llama-3 70B — 65% успішних запусків"
-            ],
-            "conclusion": "Автономні агенти переходять від експериментів до реального впровадження у бізнес."
+            "lead_paragraph": "Новий звіт від компанії Anthropic <a href=\"{link}\">демонструє</a>, як автономні агенти на базі моделі Claude 3.5 Sonnet успішно автоматизують до 80% рутинних завдань.",
+            "details_paragraph": "Це нововведення дозволяє знизити операційні витрати компаній на 45% завдяки впровадженню автономних циклів тестування коду. Claude 3.5 Sonnet лідирує з 88% успішних запусків.",
+            "why_needed_paragraph": "Класичні системи вимагали постійного людського нагляду за кожним кроком, що створювало пляшки з пляшковим горлом у процесах розробки.",
+            "beneficiaries_paragraph": "ІТ-компанії, відділи клієнтської підтримки та розробники ПЗ, що прагнуть оптимізувати свій робочий час."
         }
         
     return {
         "importance_score": 8,
         "emoji_prefix": "🔥",
-        "translated_title": "GPT-5.6 сьогодні",
-        "accent_summary": "Polymarket дає 83% ймовірність запуску 28 червня",
-        "overview": "Рядок kindle-alpha з'явився в логах Codex 12 червня. Ринки прогнозів оцінюють запуск GPT-5.6 сьогодні на 83%.",
-        "key_points_title": "Очікуваний функціонал",
-        "key_points": [
-            "Контекст 1,5 млн токенів",
-            "Покращена генерація UI та front-end коду",
-            "Швидший Codex",
-            "Виправлення «Goblin Incident»"
-        ],
-        "warning_title": "Goblin Incident",
-        "warning_text": "збій reward-моделі в GPT-5.5. Спричинив +175% метафор з тваринами.",
-        "benchmarks_title": "SWE-Bench Pro",
-        "benchmarks": [
-            "Claude Opus 4.8 — лідер",
-            "GLM-5.2 — 2-е місце",
-            "GPT-5.5 — відстає"
-        ],
-        "conclusion": "Якщо GPT-5.6 вийде сьогодні — OpenAI може повернути собі лідерство."
+        "translated_title": "OpenAI готує запуск GPT-5.6 Sol",
+        "lead_paragraph": "На ринках прогнозів Polymarket ймовірність запуску нової моделі <a href=\"{link}\">оцінюють</a> у рекордні 83%.",
+        "details_paragraph": "Очікується, що GPT-5.6 Sol отримає гігантський контекст у 1,5 млн токенів, покращену генерацію UI та виправлення помилок з попередніх версій.",
+        "why_needed_paragraph": "Попередні моделі мали обмежений контекст та часто помилялися у довгих діалогах і складних завданнях програмування.",
+        "beneficiaries_paragraph": "Спільнота розробників, дослідники даних та всі користувачі, які працюють із великими обсягами текстової інформації."
     }
 
 def format_telegram_post(source: str, link: str, processed_data: dict) -> str:
     """
-    Combines the structured JSON output from Groq into a premium Apple-style HTML layout.
+    Combines the structured JSON output from Groq into a premium editorial layout.
     """
-    emoji_prefix = processed_data.get("emoji_prefix", "🤖")
-    title = processed_data.get("translated_title", "Без назви")
-    accent = processed_data.get("accent_summary", "")
-    overview = processed_data.get("overview", "")
+    emoji_prefix = str(processed_data.get("emoji_prefix", "🤖")).strip()
+    title = str(processed_data.get("translated_title", "Без назви")).strip()
     
-    # Title line (Title is a hyperlink to the original article, normal case, bold)
-    post_text = f'<a href="{link}"><b>{emoji_prefix} {html.escape(title)}</b></a>'
-    if accent:
-        post_text += f" — {html.escape(accent)}"
-    post_text += "\n"
+    # Extract components
+    lead = str(processed_data.get("lead_paragraph", "")).strip()
+    details = str(processed_data.get("details_paragraph", "")).strip()
+    why_needed = str(processed_data.get("why_needed_paragraph", "")).strip()
+    beneficiaries = str(processed_data.get("beneficiaries_paragraph", "")).strip()
     
-    if overview:
-        post_text += f"{html.escape(overview)}\n"
-    post_text += "\n"
+    # HTML escape the link
+    escaped_link = html.escape(link)
     
-    # Key points
-    key_points = processed_data.get("key_points")
-    if key_points:
-        kp_title = processed_data.get("key_points_title") or "Ключові деталі"
-        post_text += f"📦 <b>{html.escape(kp_title)}:</b>\n"
-        for kp in key_points:
-            post_text += f"→ {html.escape(kp)}\n"
-        post_text += "\n"
+    # Process link in the lead paragraph
+    if lead:
+        # Replace {link} placeholder if present
+        lead = lead.replace('{link}', link)
+        # Force any <a> tag in lead to point to the correct link
+        lead = re.sub(r'<a(?:\s+[^>]*)?>', f'<a href="{escaped_link}">', lead)
         
-    # Warning/Note
-    warn_text = processed_data.get("warning_text")
-    if warn_text:
-        warn_title = processed_data.get("warning_title") or "Зверніть увагу"
-        post_text += f"⚠️ <b>«{html.escape(warn_title)}»</b> — {html.escape(warn_text)}\n\n"
+    # Assemble header
+    post_text = f"{emoji_prefix} <b>{html.escape(title, quote=False)}</b>\n\n"
+    
+    # Assemble body paragraphs
+    paragraphs = []
+    if lead:
+        paragraphs.append(lead)
+    if details:
+        paragraphs.append(details)
+    if why_needed:
+        paragraphs.append(f"<b>Навіщо це потрібно.</b> {why_needed}")
+    if beneficiaries:
+        paragraphs.append(f"<b>Головні бенефіціари —</b> {beneficiaries}")
         
-    # Benchmarks/Rankings
-    benchmarks = processed_data.get("benchmarks")
-    if benchmarks:
-        bench_title = processed_data.get("benchmarks_title") or "Порівняння"
-        post_text += f"📊 <b>{html.escape(bench_title)}:</b>\n"
-        ranks = ["🥇", "🥈", "🥉"]
-        for idx, bench in enumerate(benchmarks):
-            bullet = ranks[idx] if idx < len(ranks) else "▪️"
-            post_text += f"{bullet} {html.escape(bench)}\n"
-        post_text += "\n"
-        
-    # Conclusion
-    conclusion = processed_data.get("conclusion")
-    if conclusion:
-        post_text += f"{html.escape(conclusion)}\n\n"
-        
+    post_text += "\n\n".join(paragraphs)
+    post_text += "\n\n"
+    
     # Add channel sign-off
     post_text += "@raumainews"
-        
+    
     return post_text.strip()
