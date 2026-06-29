@@ -84,16 +84,10 @@ async def check_and_publish_news():
         candidates.sort(key=lambda x: x[1].get("importance_score", 0), reverse=True)
 
         # 4. Selection logic:
-        # - Always publish the single most important article.
-        # - Also publish other articles if they are exceptionally hot (score >= 8), up to max 2 total.
+        # - Publish strictly at most one article per cycle (the most important candidate).
         to_publish = []
         if candidates:
             to_publish.append(candidates[0])
-            for candidate in candidates[1:]:
-                if len(to_publish) >= 2:
-                    break
-                if candidate[1].get("importance_score", 0) >= 8:
-                    to_publish.append(candidate)
 
         logger.info(f"Selected {len(to_publish)} articles to publish out of {len(candidates)} candidates.")
 
