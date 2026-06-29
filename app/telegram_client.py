@@ -1,3 +1,4 @@
+import re
 import httpx
 import logging
 from app.config import settings
@@ -8,7 +9,7 @@ async def send_to_channel(text: str, image_url: str | None = None) -> bool:
     """
     Sends an HTML-formatted message (with an optional photo) to the target Telegram channel.
     If image_url is provided, it uses the sendPhoto method. Falls back to sendMessage if photo
-    sending fails or if the text is longer than 1024 characters.
+    sending fails or if the text is longer than 1024 characters (rendered).
     """
     if not settings.TELEGRAM_BOT_TOKEN or not settings.TELEGRAM_CHANNEL_ID:
         logger.info("[Mock Telegram Post] Token or Channel ID missing. Printing output:")
@@ -19,7 +20,8 @@ async def send_to_channel(text: str, image_url: str | None = None) -> bool:
         print("=" * 60)
         return True
 
-    use_photo = bool(image_url and len(text) <= 1024)
+    rendered_text = re.sub(r'<[^>]+>', '', text)
+    use_photo = bool(image_url and len(rendered_text) <= 1024)
     
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
