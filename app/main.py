@@ -24,13 +24,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger("app.main")
 
+# Global lock to prevent concurrent executions of the polling/publishing process
+publish_lock = asyncio.Lock()
+
 async def check_and_publish_news():
     """
     Main job that polls RSS feeds, filters duplicates,
     scores and ranks articles by importance, and posts
     the cream-of-the-crop to Telegram.
     """
-    logger.info("Starting news check cycle...")
+    if publish_lock.locked():
+        logger.warning("Another news check cycle is already running. Skipping this cycle.")
+        return
+
+    async with publish_lock:
+        logger.info("Starting news check cycle...")
     
     # Check if current local time is within the allowed publishing window
     if not settings.IGNORE_TIME_RESTRICTIONS:
@@ -166,11 +174,9 @@ async def main():
         check_and_publish_news,
         "interval",
         hours=settings.POLL_INTERVAL_HOURS,
-        id="check_news_job"
+        id="check_news_job",
+        next_run_time=datetime.now()
     )
-    
-    # Also trigger one check run immediately on startup
-    scheduler.add_job(check_and_publish_news, id="initial_check_job")
     
     scheduler.start()
     logger.info(f"Scheduler started. Polling every {settings.POLL_INTERVAL_HOURS} hours.")

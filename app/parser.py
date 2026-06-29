@@ -5,6 +5,7 @@ import asyncio
 from datetime import datetime, timezone, timedelta
 import re
 import urllib.parse
+import html as html_lib
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,18 @@ SOURCE_FALLBACK_IMAGES = {
         "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=1200&q=80",
         "https://images.unsplash.com/photo-1605810230434-7631ac76ec81?auto=format&fit=crop&w=1200&q=80",
         "https://images.unsplash.com/photo-1677442136019-21780ecad995?auto=format&fit=crop&w=1200&q=80"
+    ],
+    "BuildFastWithAI": [
+        "https://images.unsplash.com/photo-1677442136019-21780ecad995?auto=format&fit=crop&w=1200&q=80",
+        "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80",
+        "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=1200&q=80",
+        "https://images.unsplash.com/photo-1507668077129-56e32842fceb?auto=format&fit=crop&w=1200&q=80"
+    ],
+    "TransparencyCoalition": [
+        "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=1200&q=80",
+        "https://images.unsplash.com/photo-1450133064473-71024230f91b?auto=format&fit=crop&w=1200&q=80",
+        "https://images.unsplash.com/photo-1521791136064-7986c2920216?auto=format&fit=crop&w=1200&q=80",
+        "https://images.unsplash.com/photo-1427504494785-3a9ca7044f45?auto=format&fit=crop&w=1200&q=80"
     ],
 }
 
@@ -206,10 +219,212 @@ async def fetch_source_articles(source_name: str, feed_url: str):
             logger.error(f"Failed to fetch/parse feed {source_name}: {e}")
             return []
 
+MONTH_MAP = {
+    "january": 1, "jan": 1,
+    "february": 2, "feb": 2,
+    "march": 3, "mar": 3,
+    "april": 4, "apr": 4,
+    "may": 5,
+    "june": 6, "jun": 6,
+    "july": 7, "jul": 7,
+    "august": 8, "aug": 8,
+    "september": 9, "sep": 9,
+    "october": 10, "oct": 10,
+    "november": 11, "nov": 11,
+    "december": 12, "dec": 12
+}
+
+def parse_date_from_url(url: str) -> datetime | None:
+    url_lower = url.lower()
+    months_pattern = '|'.join(MONTH_MAP.keys())
+    match = re.search(rf'({months_pattern})-?(\d+)-?(\d{{4}})', url_lower)
+    if match:
+        month_str, day_str, year_str = match.groups()
+        month = MONTH_MAP.get(month_str)
+        if month:
+            try:
+                return datetime(int(year_str), month, int(day_str), tzinfo=timezone.utc)
+            except ValueError:
+                pass
+    return None
+
+def clean_paragraph_text(text: str) -> str:
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    cleaned_sentences = []
+    for s in sentences:
+        s_lower = s.lower()
+        is_promo = (
+            "build fast with ai" in s_lower or
+            "6-week program" in s_lower or
+            "intensive 6-week" in s_lower or
+            "rag pipelines" in s_lower or
+            "don't just use chatgpt" in s_lower or
+            "don't just use" in s_lower or
+            "learn to build" in s_lower or
+            "our program" in s_lower
+        )
+        if not is_promo:
+            cleaned_sentences.append(s)
+    return " ".join(cleaned_sentences).strip()
+
+async def scrape_buildfastwithai_digests() -> list:
+    logger.info("Scraping BuildFastWithAI...")
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    articles = []
+    async with httpx.AsyncClient(headers=headers, timeout=15.0, follow_redirects=True) as client:
+        try:
+            r = await client.get("https://www.buildfastwithai.com/blogs")
+            if r.status_code != 200:
+                logger.error(f"Failed to fetch BF index: {r.status_code}")
+                return []
+            
+            blog_paths = set(re.findall(r'href=["\'](/blogs/ai-news-today-[\w\-]+)["\']', r.text))
+            
+            for path in sorted(blog_paths):
+                url = f"https://www.buildfastwithai.com{path}"
+                dt = parse_date_from_url(url)
+                if not dt:
+                    continue
+                
+                # Age filter: skip digests older than 5 days
+                if (datetime.now(timezone.utc) - dt) > timedelta(days=5):
+                    continue
+                
+                page_resp = await client.get(url)
+                if page_resp.status_code != 200:
+                    continue
+                
+                html_content = page_resp.text
+                matches = list(re.finditer(r"<(p|h2|h3|h4|div)[^>]*>(?:&nbsp;|\s)*(\d+)\.\s*(.*?)</\1>", html_content, re.IGNORECASE))
+                
+                for i, m in enumerate(matches):
+                    tag, num_str, raw_title = m.groups()
+                    story_title = re.sub(r"<[^>]+>", "", raw_title).strip()
+                    story_title = html_lib.unescape(story_title)
+                    
+                    start_idx = m.end()
+                    if i + 1 < len(matches):
+                        end_idx = matches[i+1].start()
+                    else:
+                        faq_idx = html_content.find("Frequently Asked Questions", start_idx)
+                        if faq_idx != -1:
+                            end_idx = faq_idx
+                        else:
+                            end_idx = len(html_content)
+                            
+                    story_html = html_content[start_idx:end_idx]
+                    paragraphs = re.findall(r"<p[^>]*>(.*?)</p>", story_html, re.IGNORECASE)
+                    paragraphs_clean = []
+                    for p in paragraphs:
+                        p_clean = re.sub(r"<[^>]+>", "", p).strip()
+                        p_clean = html_lib.unescape(p_clean)
+                        p_clean = clean_paragraph_text(p_clean)
+                        if p_clean and not p_clean.startswith("&nbsp;"):
+                            paragraphs_clean.append(p_clean)
+                            
+                    story_summary = "\n\n".join(paragraphs_clean)
+                    story_url = f"{url}#story{num_str}"
+                    
+                    articles.append({
+                        "source": "BuildFastWithAI",
+                        "title": story_title,
+                        "link": story_url,
+                        "summary": story_summary,
+                        "published_at": dt.isoformat(),
+                        "image_url": get_source_fallback_image("BuildFastWithAI", story_url)
+                    })
+        except Exception as e:
+            logger.error(f"Error scraping BuildFastWithAI: {e}")
+    return articles
+
+async def scrape_transparencycoalition_updates() -> list:
+    logger.info("Scraping Transparency Coalition...")
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    articles = []
+    async with httpx.AsyncClient(headers=headers, timeout=15.0, follow_redirects=True) as client:
+        try:
+            r = await client.get("https://www.transparencycoalition.ai/news")
+            if r.status_code != 200:
+                logger.error(f"Failed to fetch TC index: {r.status_code}")
+                return []
+                
+            update_paths = set(re.findall(r'href=["\'](/news/ai-legislative-update-[\w\-]+)["\']', r.text))
+            
+            for path in sorted(update_paths):
+                url = f"https://www.transparencycoalition.ai{path}"
+                dt = parse_date_from_url(url)
+                if not dt:
+                    continue
+                    
+                # Age filter: skip updates older than 5 days
+                if (datetime.now(timezone.utc) - dt) > timedelta(days=5):
+                    continue
+                
+                page_resp = await client.get(url)
+                if page_resp.status_code != 200:
+                    continue
+                    
+                html_content = page_resp.text
+                start_match = re.search(r"<h3>AI bill action this week</h3>", html_content, re.IGNORECASE)
+                if not start_match:
+                    start_match = re.search(r"<h3>", html_content, re.IGNORECASE)
+                
+                start_pos = start_match.end() if start_match else 0
+                end_match = re.search(r"<h3>Track AI legislation", html_content, re.IGNORECASE)
+                end_pos = end_match.start() if end_match else len(html_content)
+                
+                body_html = html_content[start_pos:end_pos]
+                state_matches = list(re.finditer(r"<h4[^>]*>(.*?)</h4>", body_html, re.IGNORECASE))
+                
+                for i, m in enumerate(state_matches):
+                    state_name = re.sub(r"<[^>]+>", "", m.group(1)).strip()
+                    state_name = html_lib.unescape(state_name)
+                    
+                    state_start = m.end()
+                    if i + 1 < len(state_matches):
+                        state_end = state_matches[i+1].start()
+                    else:
+                        state_end = len(body_html)
+                        
+                    state_html = body_html[state_start:state_end]
+                    elements = re.findall(r"<(p|li)[^>]*>(.*?)</\1>", state_html, re.IGNORECASE)
+                    lines = []
+                    for tag, content in elements:
+                        clean = re.sub(r"<[^>]+>", "", content).strip()
+                        clean = html_lib.unescape(clean)
+                        if clean and not clean.startswith("&nbsp;"):
+                            if tag == "li":
+                                lines.append(f"- {clean}")
+                            else:
+                                lines.append(clean)
+                                
+                    state_text = "\n\n".join(lines)
+                    state_slug = re.sub(r"[^\w]+", "-", state_name.lower()).strip("-")
+                    state_url = f"{url}#{state_slug}"
+                    
+                    articles.append({
+                        "source": "TransparencyCoalition",
+                        "title": f"US AI Legislative Update: {state_name}",
+                        "link": state_url,
+                        "summary": state_text,
+                        "published_at": dt.isoformat(),
+                        "image_url": get_source_fallback_image("TransparencyCoalition", state_url)
+                    })
+        except Exception as e:
+            logger.error(f"Error scraping Transparency Coalition: {e}")
+    return articles
+
 async def fetch_all_new_articles():
     tasks = []
     for source_name, feed_url in RSS_SOURCES.items():
         tasks.append(fetch_source_articles(source_name, feed_url))
+        
+    tasks.append(scrape_buildfastwithai_digests())
+    tasks.append(scrape_transparencycoalition_updates())
         
     results = await asyncio.gather(*tasks)
     
