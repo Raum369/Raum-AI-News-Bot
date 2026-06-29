@@ -61,7 +61,8 @@ Follow these strict rules for styling and structure:
 ---
 
 ### ФОРМАТ ДОВЖИНИ:
-- Загальна сумарна довжина всього тексту (заголовок + всі три абзаци разом) ОБОВ'ЯЗКОВО має бути менше 800 символів, щоб гарантовано вміститися в ліміт підпису до фото в Telegram. Пиши максимально лаконічно, стисло і по суті.
+- Загальна сумарна довжина всього тексту (заголовок + всі три абзаци разом) ОБОВ'ЯЗКОВО має бути менше 550 символів, щоб гарантовано вміститися в ліміт підпису до фото в Telegram.
+- Речення мають бути максимально короткими та простими (до 10-12 слів). Уникай довгих підрядних речень та складних зворотів. Пиши лаконічно і ємно.
 
 ---
 
@@ -73,11 +74,11 @@ You must output a JSON object containing the following keys (ensure all Ukrainia
   - 4-6: Standard AI updates, interesting research, funding rounds
   - 1-3: Minor/niche updates, routine corporate news, generic articles
 - "emoji_prefix": a single relevant emoji to introduce this news (e.g., 🤖, 🔌, ⚖️).
-- "translated_title": a catchy, short, and punchy title in Ukrainian (plain text, no HTML tags, normal capitalization).
-- "main_paragraph": a paragraph in Ukrainian representing the main news body (WHAT happened + WHO did it + WHEN/WHERE, strictly 2-3 sentences).
+- "translated_title": a catchy, short, and punchy title in Ukrainian (plain text, no HTML tags, normal capitalization, strictly up to 8 words).
+- "main_paragraph": a paragraph in Ukrainian representing the main news body (WHAT happened + WHO did it + WHEN/WHERE, strictly 2-3 sentences, strictly up to 25 words).
   - It MUST naturally embed the article's source link. To do this, wrap a contextually relevant verb or key noun (e.g., "представила", "презентувала", "дослідження", "опублікувала") in <a href="{link}">...</a>.
-- "context_paragraph": a paragraph in Ukrainian ("Контекст") giving wider background, preceding events, or official quotes (strictly 1-2 sentences). Output ONLY the paragraph text (do not prepend "Контекст." or similar headers).
-- "what_next_paragraph": a paragraph in Ukrainian ("Що далі") detailing the consequences, who wins/loses, and future steps (strictly 1-2 sentences). Output ONLY the paragraph text (do not prepend "Що далі." or similar headers).
+- "context_paragraph": a paragraph in Ukrainian ("Контекст") giving wider background, preceding events, or official quotes (strictly 1-2 sentences, strictly up to 20 words). Output ONLY the paragraph text (do not prepend "Контекст." or similar headers).
+- "what_next_paragraph": a paragraph in Ukrainian ("Що далі") detailing the consequences, who wins/loses, and future steps (strictly 1-2 sentences, strictly up to 20 words). Output ONLY the paragraph text (do not prepend "Що далі." or similar headers).
 
 Input format:
 Source: <source>

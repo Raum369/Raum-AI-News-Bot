@@ -26,7 +26,7 @@ async def send_to_channel(text: str, image_url: str | None = None) -> bool:
             if use_photo:
                 logger.info(f"Downloading image from {image_url}...")
                 try:
-                    img_resp = await client.get(image_url)
+                    img_resp = await client.get(image_url, follow_redirects=True)
                     if img_resp.status_code == 200:
                         image_bytes = img_resp.content
                         files = {"photo": ("image.jpg", image_bytes, "image/jpeg")}
