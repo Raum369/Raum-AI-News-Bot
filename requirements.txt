@@ -9,3 +9,4 @@ asyncpg
 aiosqlite
 greenlet
 python-dotenv
+tzdata

@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import sys
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
@@ -30,6 +32,25 @@ async def check_and_publish_news():
     """
     logger.info("Starting news check cycle...")
     
+    # Check if current local time is within the allowed publishing window
+    if not settings.IGNORE_TIME_RESTRICTIONS:
+        try:
+            tz = ZoneInfo(settings.TIMEZONE)
+        except Exception:
+            logger.warning(f"Invalid timezone '{settings.TIMEZONE}' configured. Falling back to default timezone.")
+            tz = None
+
+        local_now = datetime.now(tz)
+        current_hour = local_now.hour
+
+        if not (settings.PUBLISH_START_HOUR <= current_hour < settings.PUBLISH_END_HOUR):
+            logger.info(
+                f"Current local time ({local_now.strftime('%H:%M')} {settings.TIMEZONE}) is outside "
+                f"the allowed publication window ({settings.PUBLISH_START_HOUR}:00 - {settings.PUBLISH_END_HOUR}:00). "
+                "Skipping check cycle."
+            )
+            return
+
     try:
         articles = await fetch_all_new_articles()
         logger.info(f"Fetched {len(articles)} total articles from RSS feeds.")
