@@ -8,11 +8,62 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """
-You are a premium AI news editor for a high-end Telegram channel. Your goal is to analyze, score, and rewrite the provided news article as a natural, engaging tech blog post in Ukrainian, strictly in the style of the "Droider" tech channel.
+You are a premium AI news editor for a high-end Telegram channel. Your goal is to analyze, score, and rewrite the provided news article as a natural, engaging tech blog post in Ukrainian.
 
-The style must feel like it was written by a human tech expert (witty, expert, highly professional, direct, engaging). Avoid corporate fluff, robotic transitions, and generic introductory statements.
+Follow these strict rules for styling and structure:
 
-To ensure the post fits within Telegram's photo caption limits, the combined length of the translated_title and all paragraphs must be UNDER 850 characters. Keep the text concise, punchy, and dense with information.
+## ПРАВИЛА ОФОРМЛЕННЯ НОВИН ДЛЯ TELEGRAM-КАНАЛУ
+
+### Структура кожної новини:
+1. Емодзі + жирний заголовок (коротко, суть одним реченням)
+2. Основний абзац: ЩО сталося + ХТО це зробив + КОЛИ/ДЕ
+3. Блок "Контекст": ширший фон події
+4. Блок "Що далі": наслідки, хто виграє/програє
+5. Посилання на джерело
+
+---
+
+### ВИМОГИ ДО ПОВНОТИ ТЕКСТУ:
+
+1. Завжди вказуй конкретику:
+- Назви конкретних продуктів/моделей/версій (не просто "нова модель", а "GPT-5.6 Sol")
+- Конкретні цифри, якщо є (ціни, відсотки, строки)
+- Повні назви компаній і осіб із їх роллю ("Сем Альтман, CEO OpenAI")
+
+2. Завжди давай ширший контекст:
+- Що передувало цій події? Чому вона відбулася саме зараз?
+- Які інші гравці ринку причетні або зачеплені?
+- Якщо є паралельна подія (наприклад, Anthropic теж потрапила под обмеження) — згадай її
+
+3. Не обрізай причинно-наслідковий ланцюг:
+- Чому компанія прийняла саме таке рішення?
+- Що змусило / хто тиснув?
+- Які ризики або вигоди вона бачить?
+
+4. Якщо є офіційна цитата — використай її:
+- Коротка пряма цитата (1-2 речення) від компанії або особи посилює довіру
+- Формат: *"Ми вважаємо..."* — [Назва компанії]
+
+5. Блок наслідків — обов'язковий:
+- Хто конкретно виграє або програє від цього рішення?
+- Що зміниться для кінцевого користувача / ринку / конкурентів?
+- Чи є загроза ширшому тренду (наприклад, державне регулювання AI)?
+
+---
+
+### ЧОГО УНИКАТИ:
+- ❌ Загальні фрази без конкретики ("компанія зробила кроки вперед")
+- ❌ Повтор заголовку в тілі тексту
+- ❌ Опускати важливих учасників події (уряд, конкуренти, партнери)
+- ❌ Писати "навіщо це потрібно" як абстракцію — тільки конкретні причини з тексту
+- ❌ Видавати позицію однієї сторони за факт без позначки ("компанія стверджує, що...")
+
+---
+
+### ФОРМАТ ДОВЖИНИ:
+- Загальна сумарна довжина всього тексту (заголовок + всі три абзаци разом) ОБОВ'ЯЗКОВО має бути менше 800 символів, щоб гарантовано вміститися в ліміт підпису до фото в Telegram. Пиши максимально лаконічно, стисло і по суті.
+
+---
 
 You must output a JSON object containing the following keys (ensure all Ukrainian translations are natural, professional, and grammatically correct):
 
@@ -21,13 +72,12 @@ You must output a JSON object containing the following keys (ensure all Ukrainia
   - 7-9: Major announcements, model releases, significant breakthroughs
   - 4-6: Standard AI updates, interesting research, funding rounds
   - 1-3: Minor/niche updates, routine corporate news, generic articles
-- "emoji_prefix": a single relevant emoji to introduce this news (e.g., 🔌 for hardware, 🤖 for models/agents, 🔬 for research, 🏢 for company news, ⚖️ for regulations).
+- "emoji_prefix": a single relevant emoji to introduce this news (e.g., 🤖, 🔌, ⚖️).
 - "translated_title": a catchy, short, and punchy title in Ukrainian (plain text, no HTML tags, normal capitalization).
-- "lead_paragraph": a short paragraph (1-2 sentences) in Ukrainian representing the news lead.
-  - It MUST naturally embed the article's source link. To do this, wrap a contextually relevant verb or key noun (e.g., "представила", "презентувала", "дослідження", "новий звіт", "опублікувала") in <a href="{link}">...</a>.
-- "details_paragraph": a paragraph in Ukrainian highlighting key figures, details, or comparisons (e.g., performance increases, benchmarks, physical sizes).
-- "why_needed_paragraph": a paragraph in Ukrainian explaining why this is needed, the technical background, the problem it solves, or the physical limits/constraints it bypasses. Output ONLY the explanation text. Do NOT include headers like "Навіщо це потрібно" or "Зачем это нужно".
-- "beneficiaries_paragraph": a paragraph in Ukrainian explaining who will benefit from this development, who are the main beneficiaries/sectors. Output ONLY the explanation text. Do NOT include headers like "Головні бенефіціари" or "Главные бенефициары".
+- "main_paragraph": a paragraph in Ukrainian representing the main news body (WHAT happened + WHO did it + WHEN/WHERE, strictly 2-3 sentences).
+  - It MUST naturally embed the article's source link. To do this, wrap a contextually relevant verb or key noun (e.g., "представила", "презентувала", "дослідження", "опублікувала") in <a href="{link}">...</a>.
+- "context_paragraph": a paragraph in Ukrainian ("Контекст") giving wider background, preceding events, or official quotes (strictly 1-2 sentences). Output ONLY the paragraph text (do not prepend "Контекст." or similar headers).
+- "what_next_paragraph": a paragraph in Ukrainian ("Що далі") detailing the consequences, who wins/loses, and future steps (strictly 1-2 sentences). Output ONLY the paragraph text (do not prepend "Що далі." or similar headers).
 
 Input format:
 Source: <source>
@@ -74,20 +124,18 @@ def get_mock_processed_article(source: str, title: str, summary: str) -> dict:
             "importance_score": 9,
             "emoji_prefix": "🤖",
             "translated_title": "ШІ-агенти змінюють корпоративну роботу",
-            "lead_paragraph": "Новий звіт від компанії Anthropic <a href=\"{link}\">демонструє</a>, як автономні агенти на базі моделі Claude 3.5 Sonnet успішно автоматизують до 80% рутинних завдань.",
-            "details_paragraph": "Це нововведення дозволяє знизити операційні витрати компаній на 45% завдяки впровадженню автономних циклів тестування коду. Claude 3.5 Sonnet лідирує з 88% успішних запусків.",
-            "why_needed_paragraph": "Класичні системи вимагали постійного людського нагляду за кожним кроком, що створювало пляшки з пляшковим горлом у процесах розробки.",
-            "beneficiaries_paragraph": "ІТ-компанії, відділи клієнтської підтримки та розробники ПЗ, що прагнуть оптимізувати свій робочий час."
+            "main_paragraph": "Новий звіт від компанії Anthropic <a href=\"{link}\">демонструє</a>, як автономні агенти на базі моделі Claude 3.5 Sonnet успішно автоматизують до 80% рутинних завдань.",
+            "context_paragraph": "Це частина ширшого тренду на автоматизацію. Раніше компанія представила інструмент Computer Use, що дозволяє ШІ взаємодіяти з інтерфейсом ПК так само, як це робить людина.",
+            "what_next_paragraph": "Компанія Anthropic планує покращити точність роботи агентів у майбутніх релізах. Головними бенефіціарами стануть ІТ-компанії та відділи підтримки."
         }
         
     return {
         "importance_score": 8,
         "emoji_prefix": "🔥",
-        "translated_title": "OpenAI готує запуск GPT-5.6 Sol",
-        "lead_paragraph": "На ринках прогнозів Polymarket ймовірність запуску нової моделі <a href=\"{link}\">оцінюють</a> у рекордні 83%.",
-        "details_paragraph": "Очікується, що GPT-5.6 Sol отримає гігантський контекст у 1,5 млн токенів, покращену генерацію UI та виправлення помилок з попередніх версій.",
-        "why_needed_paragraph": "Попередні моделі мали обмежений контекст та часто помилялися у довгих діалогах і складних завданнях програмування.",
-        "beneficiaries_paragraph": "Спільнота розробників, дослідники даних та всі користувачі, які працюють із великими обсягами текстової інформації."
+        "translated_title": "OpenAI обмежує GPT-5.6 на вимогу адміністрації Трампа",
+        "main_paragraph": "OpenAI оголосила, що три нові моделі лінійки GPT-5.6 — Sol, Terra та Luna — <a href=\"{link}\">доступні</a> лише обмеженому колу партнерів.",
+        "context_paragraph": "Це частина тиску адміністрації Трампа на AI-компанії. Раніше уряд змусив Anthropic зняти модель Fable 5, заборонивши доступ іноземцям.",
+        "what_next_paragraph": "Широкий доступ планується найближчими тижнями, але регуляторні затримки можуть посилити позиції Китаю в AI-перегонах."
     }
 
 def format_telegram_post(source: str, link: str, processed_data: dict) -> str:
@@ -98,39 +146,43 @@ def format_telegram_post(source: str, link: str, processed_data: dict) -> str:
     title = str(processed_data.get("translated_title", "Без назви")).strip()
     
     # Extract components
-    lead = str(processed_data.get("lead_paragraph", "")).strip()
-    details = str(processed_data.get("details_paragraph", "")).strip()
-    why_needed = str(processed_data.get("why_needed_paragraph", "")).strip()
-    beneficiaries = str(processed_data.get("beneficiaries_paragraph", "")).strip()
+    main_p = str(processed_data.get("main_paragraph", "")).strip()
+    context = str(processed_data.get("context_paragraph", "")).strip()
+    what_next = str(processed_data.get("what_next_paragraph", "")).strip()
     
     # HTML escape the link
     escaped_link = html.escape(link)
     
-    # Process link in the lead paragraph
-    if lead:
+    # Process link in the main paragraph if present
+    if main_p:
         # Replace {link} placeholder if present
-        lead = lead.replace('{link}', link)
-        # Force any <a> tag in lead to point to the correct link
-        lead = re.sub(r'<a(?:\s+[^>]*)?>', f'<a href="{escaped_link}">', lead)
+        main_p = main_p.replace('{link}', link)
+        # Force any <a> tag in main_p to point to the correct link
+        main_p = re.sub(r'<a(?:\s+[^>]*)?>', f'<a href="{escaped_link}">', main_p)
         
     # Assemble header
     post_text = f"{emoji_prefix} <b>{html.escape(title, quote=False)}</b>\n\n"
     
     # Assemble body paragraphs
     paragraphs = []
-    if lead:
-        paragraphs.append(lead)
-    if details:
-        paragraphs.append(details)
-    if why_needed:
-        paragraphs.append(f"<b>Навіщо це потрібно.</b> {why_needed}")
-    if beneficiaries:
-        paragraphs.append(f"<b>Головні бенефіціари —</b> {beneficiaries}")
-        
+    if main_p:
+        paragraphs.append(main_p)
+    if context:
+        # Check if context starts with "Контекст" to avoid double labelling
+        if not context.lower().startswith("контекст"):
+            paragraphs.append(f"<b>Контекст.</b> {context}")
+        else:
+            paragraphs.append(context)
+    if what_next:
+        if not what_next.lower().startswith("що далі"):
+            paragraphs.append(f"<b>Що далі.</b> {what_next}")
+        else:
+            paragraphs.append(what_next)
+            
     post_text += "\n\n".join(paragraphs)
     post_text += "\n\n"
     
-    # Add channel sign-off
-    post_text += "@raumainews"
+    # Add source link and channel sign-off
+    post_text += f'<a href="{escaped_link}">Джерело</a> | @raumainews'
     
     return post_text.strip()
