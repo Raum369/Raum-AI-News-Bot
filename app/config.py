@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = Field(default="sqlite+aiosqlite:///./news.db")
     
     POLL_INTERVAL_HOURS: float = Field(default=3.0)
-    GROQ_MODEL: str = Field(default="llama-3.3-70b-versatile")
+    GROQ_MODEL: str = Field(default="openai/gpt-oss-120b")
 
     # Time restrictions for publishing news
     PUBLISH_START_HOUR: int = Field(default=8)
