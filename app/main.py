@@ -153,6 +153,42 @@ async def check_and_publish_news():
     except Exception as e:
         logger.exception(f"Error during check_and_publish_news execution: {e}")
 
+async def warm_up_model():
+    """
+    Sends a minimal 1-token request (using "." as prompt and max_tokens=1) to keep 
+    the model hot in the Groq LPU cache during active publishing hours.
+    """
+    if not settings.GROQ_API_KEY:
+        return
+
+    # Check if current local time is within the allowed publishing window
+    if not settings.IGNORE_TIME_RESTRICTIONS:
+        try:
+            tz = ZoneInfo(settings.TIMEZONE)
+        except Exception:
+            tz = None
+        local_now = datetime.now(tz)
+        current_hour = local_now.hour
+        if not (settings.PUBLISH_START_HOUR <= current_hour < settings.PUBLISH_END_HOUR):
+            logger.info("Outside allowed hours. Skipping model warm-up.")
+            return
+
+    logger.info(f"Sending minimal warm-up ping (1 token) to keep {settings.GROQ_MODEL} active...")
+    try:
+        from groq import AsyncGroq
+        client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+        
+        # Absolute minimum token query to wake up the model
+        await client.chat.completions.create(
+            messages=[{"role": "user", "content": "."}],
+            model=settings.GROQ_MODEL,
+            max_tokens=1,
+            timeout=10.0
+        )
+        logger.info("Warm-up ping successful.")
+    except Exception as e:
+        logger.warning(f"Warm-up ping failed/timed out (cold starting or rate-limited): {e}")
+
 async def main():
     logger.info("Initializing Raum AI News Bot database...")
     await init_db()
@@ -178,8 +214,17 @@ async def main():
         next_run_time=datetime.now()
     )
     
+    # Schedule warm-up job: runs every 14 minutes
+    scheduler.add_job(
+        warm_up_model,
+        "interval",
+        minutes=14,
+        id="warm_up_model_job",
+        next_run_time=datetime.now()
+    )
+    
     scheduler.start()
-    logger.info(f"Scheduler started. Polling every {settings.POLL_INTERVAL_HOURS} hours.")
+    logger.info(f"Scheduler started. Polling every {settings.POLL_INTERVAL_HOURS} hours, warming up model every 14 minutes.")
     
     # Keep the main loop running
     try:

@@ -2,6 +2,7 @@ import json
 import html
 import logging
 import re
+import asyncio
 from groq import AsyncGroq
 from app.config import settings
 
@@ -93,32 +94,40 @@ Your response must be a valid JSON object ONLY. Do not wrap it in markdown codeb
 async def process_article(source: str, original_title: str, original_summary: str) -> dict:
     """
     Sends article data to Groq to translate, score, and structure as natural paragraphs.
+    With robust retry and timeout logic to handle model cold starts.
     """
     if not settings.GROQ_API_KEY:
         logger.warning("GROQ_API_KEY is not set. Using fallback mock processor.")
         return get_mock_processed_article(source, original_title, original_summary)
         
-    try:
-        client = AsyncGroq(api_key=settings.GROQ_API_KEY)
-        
-        user_content = f"Source: {source}\nTitle: {original_title}\nSummary: {original_summary}"
-        
-        response = await client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_content}
-            ],
-            model=settings.GROQ_MODEL,
-            response_format={"type": "json_object"},
-            temperature=0.3
-        )
-        
-        content = response.choices[0].message.content
-        data = json.loads(content)
-        return data
-    except Exception as e:
-        logger.error(f"Error processing article with Groq: {e}")
-        return get_mock_processed_article(source, original_title, original_summary)
+    attempts = 3
+    for attempt in range(1, attempts + 1):
+        try:
+            client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+            
+            user_content = f"Source: {source}\nTitle: {original_title}\nSummary: {original_summary}"
+            
+            response = await client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_content}
+                ],
+                model=settings.GROQ_MODEL,
+                response_format={"type": "json_object"},
+                temperature=0.3,
+                timeout=90.0
+            )
+            
+            content = response.choices[0].message.content
+            data = json.loads(content)
+            return data
+        except Exception as e:
+            logger.warning(f"Attempt {attempt}/{attempts} failed processing article with Groq ({settings.GROQ_MODEL}): {e}")
+            if attempt < attempts:
+                await asyncio.sleep(5.0)
+            else:
+                logger.error(f"All {attempts} attempts to process article with Groq failed. Falling back to mock processor.")
+                return get_mock_processed_article(source, original_title, original_summary)
 
 def get_mock_processed_article(source: str, title: str, summary: str) -> dict:
     """Fallback generator when API keys are missing or API calls fail."""
