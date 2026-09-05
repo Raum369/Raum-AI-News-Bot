@@ -3,6 +3,7 @@ import html
 import logging
 import re
 import asyncio
+from datetime import datetime
 from groq import AsyncGroq
 from app.config import settings
 
@@ -83,7 +84,12 @@ You must output a JSON object containing the following keys (ensure all Ukrainia
 - "context_paragraph": a paragraph in Ukrainian giving wider background, preceding events, or official quotes (strictly 2-3 sentences, 30 to 55 words). Output ONLY the paragraph text (do not prepend "Контекст." or similar headers).
 - "what_next_paragraph": a paragraph in Ukrainian detailing the consequences, who wins/loses, and future steps (strictly 2-3 sentences, 30 to 55 words). Output ONLY the paragraph text (do not prepend "Що далі." or similar headers).
 
+### ДАТА:
+- Поточну дату бери З ПОЛЯ "Today's date" у вхідних даних. Ніколи не вигадуй рік самостійно.
+- Якщо згадуєш дату — використовуй рік з цього поля.
+
 Input format:
+Today's date: <date>
 Source: <source>
 Title: <title>
 Summary: <summary>
@@ -105,7 +111,8 @@ async def process_article(source: str, original_title: str, original_summary: st
         try:
             client = AsyncGroq(api_key=settings.GROQ_API_KEY)
             
-            user_content = f"Source: {source}\nTitle: {original_title}\nSummary: {original_summary}"
+            today = datetime.now().strftime("%B %d, %Y")
+            user_content = f"Today's date: {today}\nSource: {source}\nTitle: {original_title}\nSummary: {original_summary}"
             
             response = await client.chat.completions.create(
                 messages=[

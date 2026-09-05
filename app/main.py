@@ -24,6 +24,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("app.main")
 
+# Suppress httpx INFO logs — they expose full request URLs including Telegram bot token
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 # Global lock to prevent concurrent executions of the polling/publishing process
 publish_lock = asyncio.Lock()
 
@@ -205,14 +208,18 @@ async def main():
     # Setup the scheduler
     scheduler = AsyncIOScheduler()
     
-    # Schedule job: runs immediately on start, and then every N hours
-    scheduler.add_job(
-        check_and_publish_news,
-        "interval",
-        hours=settings.POLL_INTERVAL_HOURS,
-        id="check_news_job",
-        next_run_time=datetime.now()
-    )
+    tz = ZoneInfo(settings.TIMEZONE)
+    
+    # Schedule 3 fixed daily runs: 10:00, 15:00, 20:00 (Kyiv time)
+    for hour in [10, 15, 20]:
+        scheduler.add_job(
+            check_and_publish_news,
+            "cron",
+            hour=hour,
+            minute=0,
+            timezone=tz,
+            id=f"check_news_{hour:02d}00",
+        )
     
     # Schedule warm-up job: runs every 14 minutes
     scheduler.add_job(
@@ -224,7 +231,7 @@ async def main():
     )
     
     scheduler.start()
-    logger.info(f"Scheduler started. Polling every {settings.POLL_INTERVAL_HOURS} hours, warming up model every 14 minutes.")
+    logger.info(f"Scheduler started. Fixed daily runs at 10:00, 15:00, 20:00 ({settings.TIMEZONE}), warming up model every 14 minutes.")
     
     # Keep the main loop running
     try:
